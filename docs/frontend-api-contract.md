@@ -125,6 +125,63 @@ Response:
 
 Frontend can render `columns` as table headers and `rows` as table data. For charts, usually one dimension becomes the X axis and the first metric becomes the Y value.
 
+### `POST /analytics/query/export/xlsx`
+
+Accepts the same request body as `POST /analytics/query`.
+
+Response:
+
+```text
+application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+```
+
+Frontend should download the response as `analytics-report.xlsx`.
+
+## Rating
+
+### `POST /analytics/rating`
+
+Request:
+
+```json
+{
+  "status": "ENROLLED",
+  "military_specialty": "Оператор БПЛА",
+  "study_group": "ЦИС-21",
+  "fitness_category": "А",
+  "psycho_category": "I",
+  "limit": 100
+}
+```
+
+All filters are optional.
+
+Response:
+
+```json
+{
+  "rows": [
+    {
+      "full_name": "Иванов Иван Иванович",
+      "study_group": "ЦИС-21",
+      "military_specialty": "Оператор БПЛА",
+      "status": "ENROLLED",
+      "fitness_category": "А",
+      "psycho_category": "I",
+      "grade100": 82.5,
+      "total_points": 154,
+      "final_result": 176
+    }
+  ]
+}
+```
+
+Rows are sorted by `final_result desc`. For `observer`, sensitive personal fields such as `full_name` may be hidden.
+
+### `POST /analytics/rating/export/xlsx`
+
+Accepts the same request body as `POST /analytics/rating` and returns XLSX.
+
 ## Query Limits
 
 - `metrics`: 0-2 items;

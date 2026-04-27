@@ -73,3 +73,28 @@ class AnalyticsColumnResponse(BaseModel):
 class AnalyticsQueryResponse(BaseModel):
     columns: list[AnalyticsColumnResponse]
     rows: list[dict[str, Any]]
+
+
+class RatingRequest(BaseModel):
+    status: str | None = None
+    military_specialty: str | None = None
+    study_group: str | None = None
+    fitness_category: str | None = None
+    psycho_category: str | None = None
+    limit: int = Field(default=100, ge=1, le=500)
+
+
+class RatingRow(BaseModel):
+    full_name: str | None = None
+    study_group: str | None = None
+    military_specialty: str | None = None
+    status: str | None = None
+    fitness_category: str | None = None
+    psycho_category: str | None = None
+    grade100: float | None = None
+    total_points: int | None = None
+    final_result: int | None = None
+
+
+class RatingResponse(BaseModel):
+    rows: list[RatingRow]

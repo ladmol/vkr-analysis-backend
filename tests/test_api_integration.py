@@ -134,6 +134,67 @@ def test_full_name_dimension_query_against_real_database(
     }
 
 
+def test_rating_endpoint_returns_sorted_rows(
+    seeded_db: None,
+    client: TestClient,
+):
+    token = login(client)
+
+    response = client.post(
+        "/analytics/rating",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"status": "PYTEST", "limit": 10},
+    )
+
+    assert response.status_code == 200
+    rows = response.json()["rows"]
+    assert [row["final_result"] for row in rows] == [180, 170]
+    assert rows[0]["full_name"] == "Второй Тест Тестович"
+
+
+def test_analytics_query_xlsx_export(
+    seeded_db: None,
+    client: TestClient,
+):
+    token = login(client)
+
+    response = client.post(
+        "/analytics/query/export/xlsx",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "metrics": [{"field": "student_count", "aggregation": "count"}],
+            "dimensions": ["military_specialty"],
+            "filters": [
+                {"field": "status", "operator": "eq", "value": "PYTEST"}
+            ],
+            "sort": [{"field": "student_count", "direction": "desc"}],
+            "limit": 10,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert response.content.startswith(b"PK")
+
+
+def test_rating_xlsx_export(
+    seeded_db: None,
+    client: TestClient,
+):
+    token = login(client)
+
+    response = client.post(
+        "/analytics/rating/export/xlsx",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"status": "PYTEST", "limit": 10},
+    )
+
+    assert response.status_code == 200
+    assert response.content.startswith(b"PK")
+
+
 def login(client: TestClient) -> str:
     response = client.post(
         "/auth/login",

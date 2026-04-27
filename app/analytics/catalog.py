@@ -2,7 +2,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import ColumnElement, func
+from sqlalchemy import ColumnElement, func, literal_column
 
 from app.analytics.schemas import Aggregation, AnalyticsFieldResponse, FieldType
 from app.auth.schemas import UserRoleName
@@ -50,7 +50,7 @@ class AnalyticsField:
 
 def full_name_expression() -> ColumnElement[Any]:
     return func.concat_ws(
-        " ",
+        literal_column("' '"),
         Student.last_name,
         Student.first_name,
         Student.patronymic,

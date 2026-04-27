@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     debug: bool = False
 
-    postgres_host: str = "localhost"
+    postgres_host: str = "127.0.0.1"
     postgres_port: int = 5433
     postgres_db: str = "vkr_student"
     postgres_user: str = "postgres"

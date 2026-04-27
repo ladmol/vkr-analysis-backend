@@ -76,6 +76,9 @@ def test_analytics_query_against_real_database(
     assert fields_response.status_code == 200
     field_ids = {field["id"] for field in fields_response.json()}
     assert {"student_count", "military_specialty", "status"} <= field_ids
+    full_name_field = next(field for field in fields_response.json() if field["id"] == "full_name")
+    assert full_name_field["displayable"] is True
+    assert full_name_field["groupable"] is False
 
     query_response = client.post(
         "/analytics/query",
@@ -102,18 +105,18 @@ def test_analytics_query_against_real_database(
     ]
 
 
-def test_full_name_dimension_query_against_real_database(
+def test_summary_endpoint_supports_multi_dimension_query(
     seeded_db: None,
     client: TestClient,
 ):
     token = login(client)
 
     query_response = client.post(
-        "/analytics/query",
+        "/analytics/summary",
         headers={"Authorization": f"Bearer {token}"},
         json={
             "metrics": [{"field": "student_count", "aggregation": "count"}],
-            "dimensions": ["full_name"],
+            "dimensions": ["platoon", "military_commissariat"],
             "filters": [
                 {"field": "status", "operator": "eq", "value": "PYTEST"}
             ],
@@ -125,13 +128,135 @@ def test_full_name_dimension_query_against_real_database(
     assert query_response.status_code == 200
     payload = query_response.json()
     assert payload["columns"] == [
-        {"key": "full_name", "label": "ФИО", "type": "string"},
+        {"key": "platoon", "label": "Взвод", "type": "string"},
+        {"key": "military_commissariat", "label": "Военный комиссариат", "type": "string"},
         {"key": "student_count", "label": "Количество", "type": "number"},
     ]
-    assert {row["full_name"] for row in payload["rows"]} == {
-        "Первый Тест Тестович",
+    assert payload["rows"] == [
+        {
+            "platoon": "Pytest взвод",
+            "military_commissariat": "Pytest военкомат",
+            "student_count": 2,
+        }
+    ]
+
+
+def test_summary_endpoint_supports_multiple_metrics_and_filters(
+    seeded_db: None,
+    client: TestClient,
+):
+    token = login(client)
+
+    query_response = client.post(
+        "/analytics/summary",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "metrics": [
+                {"field": "student_count", "aggregation": "count"},
+                {"field": "final_result", "aggregation": "avg"},
+            ],
+            "dimensions": ["platoon"],
+            "filters": [
+                {"field": "status", "operator": "eq", "value": "PYTEST"},
+                {"field": "final_result", "operator": "gte", "value": 170},
+            ],
+            "sort": [{"field": "student_count", "direction": "desc"}],
+            "limit": 10,
+        },
+    )
+
+    assert query_response.status_code == 200
+    payload = query_response.json()
+    assert [column["key"] for column in payload["columns"]] == [
+        "platoon",
+        "student_count",
+        "avg_final_result",
+    ]
+    assert payload["rows"] == [
+        {
+            "platoon": "Pytest взвод",
+            "student_count": 2,
+            "avg_final_result": 175.0,
+        }
+    ]
+
+
+def test_field_values_endpoint_returns_distinct_filter_values(
+    seeded_db: None,
+    client: TestClient,
+):
+    token = login(client)
+
+    response = client.get(
+        "/analytics/fields/platoon/values",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["field"] == "platoon"
+    assert "Pytest взвод" in response.json()["values"]
+
+
+def test_detail_query_returns_selected_person_rows(
+    seeded_db: None,
+    client: TestClient,
+):
+    token = login(client)
+
+    response = client.post(
+        "/analytics/detail",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "columns": [
+                "full_name",
+                "platoon",
+                "military_commissariat",
+                "military_specialty",
+                "final_result",
+            ],
+            "filters": [{"field": "platoon", "operator": "eq", "value": "Pytest взвод"}],
+            "sort": [{"field": "final_result", "direction": "desc"}],
+            "limit": 10,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [column["key"] for column in payload["columns"]] == [
+        "full_name",
+        "platoon",
+        "military_commissariat",
+        "military_specialty",
+        "final_result",
+    ]
+    assert [row["full_name"] for row in payload["rows"]] == [
         "Второй Тест Тестович",
+        "Первый Тест Тестович",
+    ]
+    assert {row["military_commissariat"] for row in payload["rows"]} == {
+        "Pytest военкомат"
     }
+
+
+def test_detail_query_rejects_inaccessible_observer_column(
+    seeded_db: None,
+    client: TestClient,
+):
+    token = login(client, login_value="pytest_observer")
+
+    response = client.post(
+        "/analytics/detail",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "columns": ["full_name", "platoon"],
+            "filters": [],
+            "sort": [],
+            "limit": 10,
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Unknown or inaccessible field" in response.json()["detail"]
 
 
 def test_rating_endpoint_returns_sorted_rows(
@@ -179,6 +304,30 @@ def test_analytics_query_xlsx_export(
     assert response.content.startswith(b"PK")
 
 
+def test_detail_xlsx_export(
+    seeded_db: None,
+    client: TestClient,
+):
+    token = login(client)
+
+    response = client.post(
+        "/analytics/detail/export/xlsx",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "columns": ["full_name", "platoon", "military_commissariat"],
+            "filters": [{"field": "status", "operator": "eq", "value": "PYTEST"}],
+            "sort": [{"field": "full_name", "direction": "asc"}],
+            "limit": 10,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert response.content.startswith(b"PK")
+
+
 def test_rating_xlsx_export(
     seeded_db: None,
     client: TestClient,
@@ -195,10 +344,10 @@ def test_rating_xlsx_export(
     assert response.content.startswith(b"PK")
 
 
-def login(client: TestClient) -> str:
+def login(client: TestClient, login_value: str = "pytest_admin") -> str:
     response = client.post(
         "/auth/login",
-        json={"login": "pytest_admin", "password": TEST_PASSWORD},
+        json={"login": login_value, "password": TEST_PASSWORD},
     )
     assert response.status_code == 200
     return response.json()["access_token"]
@@ -224,8 +373,22 @@ def seed_test_data(session: Session) -> None:
     session.exec(
         text(
             """
+            INSERT INTO users (login, password)
+            VALUES ('pytest_observer', :password_hash)
+            ON CONFLICT (login) DO UPDATE
+            SET password = EXCLUDED.password
+            """
+        ),
+        params={"password_hash": password_hash},
+    )
+    session.exec(
+        text(
+            """
             DELETE FROM user_roles
-            WHERE user_id = (SELECT id_user FROM users WHERE login = 'pytest_admin')
+            WHERE user_id IN (
+                SELECT id_user FROM users
+                WHERE login IN ('pytest_admin', 'pytest_observer')
+            )
             """
         )
     )
@@ -236,6 +399,16 @@ def seed_test_data(session: Session) -> None:
             SELECT 0, id_user
             FROM users
             WHERE login = 'pytest_admin'
+            """
+        )
+    )
+    session.exec(
+        text(
+            """
+            INSERT INTO user_roles (user_authority, user_id)
+            SELECT 2, id_user
+            FROM users
+            WHERE login = 'pytest_observer'
             """
         )
     )
@@ -285,6 +458,17 @@ def seed_test_data(session: Session) -> None:
     session.exec(
         text(
             """
+            INSERT INTO platoon (name_platoon)
+            SELECT 'Pytest взвод'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM platoon WHERE name_platoon = 'Pytest взвод'
+            )
+            """
+        )
+    )
+    session.exec(
+        text(
+            """
             INSERT INTO student (
                 first_name,
                 last_name,
@@ -293,6 +477,7 @@ def seed_test_data(session: Session) -> None:
                 study_group_id,
                 military_commissariat_id,
                 military_accounting_specialty_id,
+                platoon_id,
                 note_student,
                 status,
                 total_points,
@@ -311,6 +496,7 @@ def seed_test_data(session: Session) -> None:
                 study_group.id_group,
                 military_commissariat.id_military_commissariat,
                 military_accounting_specialty.id_military_accounting_specialty,
+                platoon.id,
                 'pytest-seed',
                 'PYTEST',
                 data.total_points,
@@ -337,6 +523,7 @@ def seed_test_data(session: Session) -> None:
                 ON military_commissariat.name_military_commissariat = 'Pytest военкомат'
             JOIN military_accounting_specialty
                 ON military_accounting_specialty.code = 'PYTEST'
+            JOIN platoon ON platoon.name_platoon = 'Pytest взвод'
             """
         )
     )
@@ -348,8 +535,14 @@ def cleanup_test_data(session: Session) -> None:
         text(
             """
             DELETE FROM user_roles
-            WHERE user_id IN (SELECT id_user FROM users WHERE login = 'pytest_admin')
+            WHERE user_id IN (
+                SELECT id_user FROM users
+                WHERE login IN ('pytest_admin', 'pytest_observer')
+            )
             """
         )
     )
-    session.exec(text("DELETE FROM users WHERE login = 'pytest_admin'"))
+    session.exec(
+        text("DELETE FROM users WHERE login IN ('pytest_admin', 'pytest_observer')")
+    )
+    session.exec(text("DELETE FROM platoon WHERE name_platoon = 'Pytest взвод'"))

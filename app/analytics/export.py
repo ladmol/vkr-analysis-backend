@@ -17,6 +17,17 @@ def analytics_response_to_xlsx(response: AnalyticsQueryResponse) -> bytes:
     return rows_to_xlsx(rows, sheet_name="Report")
 
 
+def detail_response_to_xlsx(response: AnalyticsQueryResponse) -> bytes:
+    rows = [
+        [column.label for column in response.columns],
+        *[
+            [row.get(column.key) for column in response.columns]
+            for row in response.rows
+        ],
+    ]
+    return rows_to_xlsx(rows, sheet_name="Details")
+
+
 def rating_response_to_xlsx(response: RatingResponse) -> bytes:
     headers = [
         "ФИО",

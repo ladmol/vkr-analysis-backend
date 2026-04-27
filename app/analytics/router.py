@@ -2,13 +2,24 @@ from fastapi import APIRouter, Depends, Response
 from sqlmodel import Session
 
 from app.analytics.catalog import get_accessible_fields
-from app.analytics.export import analytics_response_to_xlsx, rating_response_to_xlsx
-from app.analytics.query_builder import execute_analytics_query
+from app.analytics.export import (
+    analytics_response_to_xlsx,
+    detail_response_to_xlsx,
+    rating_response_to_xlsx,
+)
+from app.analytics.query_builder import (
+    execute_analytics_query,
+    execute_detail_query,
+    execute_summary_query,
+    get_field_values,
+)
 from app.analytics.rating import get_rating
 from app.analytics.schemas import (
     AnalyticsFieldResponse,
     AnalyticsQueryRequest,
     AnalyticsQueryResponse,
+    DetailQueryRequest,
+    FieldValuesResponse,
     RatingRequest,
     RatingResponse,
 )
@@ -28,6 +39,18 @@ def list_fields(
     return [field_item.to_response() for field_item in fields.values()]
 
 
+@router.get("/fields/{field_id}/values", response_model=FieldValuesResponse)
+def list_field_values(
+    field_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> FieldValuesResponse:
+    return FieldValuesResponse(
+        field=field_id,
+        values=get_field_values(session, field_id, current_user.role),
+    )
+
+
 @router.post("/query", response_model=AnalyticsQueryResponse)
 def query_analytics(
     payload: AnalyticsQueryRequest,
@@ -35,6 +58,24 @@ def query_analytics(
     session: Session = Depends(get_session),
 ) -> AnalyticsQueryResponse:
     return execute_analytics_query(session, payload, current_user.role)
+
+
+@router.post("/summary", response_model=AnalyticsQueryResponse)
+def summary_analytics(
+    payload: AnalyticsQueryRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> AnalyticsQueryResponse:
+    return execute_summary_query(session, payload, current_user.role)
+
+
+@router.post("/detail", response_model=AnalyticsQueryResponse)
+def detail_analytics(
+    payload: DetailQueryRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> AnalyticsQueryResponse:
+    return execute_detail_query(session, payload, current_user.role)
 
 
 @router.post("/query/export/xlsx")
@@ -49,6 +90,36 @@ def export_query_xlsx(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": 'attachment; filename="analytics-report.xlsx"'},
+    )
+
+
+@router.post("/summary/export/xlsx")
+def export_summary_xlsx(
+    payload: AnalyticsQueryRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> Response:
+    result = execute_summary_query(session, payload, current_user.role)
+    content = analytics_response_to_xlsx(result)
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="summary-report.xlsx"'},
+    )
+
+
+@router.post("/detail/export/xlsx")
+def export_detail_xlsx(
+    payload: DetailQueryRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> Response:
+    result = execute_detail_query(session, payload, current_user.role)
+    content = detail_response_to_xlsx(result)
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="detail-report.xlsx"'},
     )
 
 

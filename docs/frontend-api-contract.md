@@ -66,6 +66,7 @@ Response:
     "id": "military_specialty",
     "label": "ВУС",
     "type": "string",
+    "displayable": true,
     "groupable": true,
     "filterable": true,
     "aggregations": []
@@ -74,6 +75,7 @@ Response:
     "id": "student_count",
     "label": "Количество",
     "type": "number",
+    "displayable": false,
     "groupable": false,
     "filterable": false,
     "aggregations": ["count"]
@@ -84,12 +86,13 @@ Response:
 Frontend rules:
 
 - fields with `groupable=true` can be used in `dimensions`;
+- fields with `displayable=true` can be used in detail `columns`;
 - fields with non-empty `aggregations` can be used in `metrics`;
 - fields with `filterable=true` can be used in `filters`.
 
-## Analytics Query
+## Analytics Summary Query
 
-### `POST /analytics/query`
+### `POST /analytics/summary`
 
 Request:
 
@@ -98,7 +101,7 @@ Request:
   "metrics": [
     { "field": "student_count", "aggregation": "count" }
   ],
-  "dimensions": ["military_specialty"],
+  "dimensions": ["platoon", "military_commissariat"],
   "filters": [
     { "field": "status", "operator": "eq", "value": "ENROLLED" }
   ],
@@ -114,20 +117,23 @@ Response:
 ```json
 {
   "columns": [
-    { "key": "military_specialty", "label": "ВУС", "type": "string" },
+    { "key": "platoon", "label": "Взвод", "type": "string" },
+    { "key": "military_commissariat", "label": "Военный комиссариат", "type": "string" },
     { "key": "student_count", "label": "Количество", "type": "number" }
   ],
   "rows": [
-    { "military_specialty": "Оператор БПЛА", "student_count": 12 }
+    { "platoon": "1 взвод", "military_commissariat": "Ярославский ОВК", "student_count": 12 }
   ]
 }
 ```
 
 Frontend can render `columns` as table headers and `rows` as table data. For charts, usually one dimension becomes the X axis and the first metric becomes the Y value.
 
-### `POST /analytics/query/export/xlsx`
+`POST /analytics/query` remains as a compatibility alias for summary requests.
 
-Accepts the same request body as `POST /analytics/query`.
+### `POST /analytics/summary/export/xlsx`
+
+Accepts the same request body as `POST /analytics/summary`.
 
 Response:
 
@@ -135,7 +141,63 @@ Response:
 application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
 ```
 
-Frontend should download the response as `analytics-report.xlsx`.
+Frontend should download the response as `summary-report.xlsx`.
+
+`POST /analytics/query/export/xlsx` remains as a compatibility alias.
+
+## Analytics Detail Query
+
+### `POST /analytics/detail`
+
+Request:
+
+```json
+{
+  "columns": [
+    "full_name",
+    "platoon",
+    "military_commissariat",
+    "military_specialty",
+    "final_result"
+  ],
+  "filters": [
+    { "field": "platoon", "operator": "eq", "value": "1 взвод" }
+  ],
+  "sort": [
+    { "field": "final_result", "direction": "desc" }
+  ],
+  "limit": 100
+}
+```
+
+Response:
+
+```json
+{
+  "columns": [
+    { "key": "full_name", "label": "ФИО", "type": "string" },
+    { "key": "platoon", "label": "Взвод", "type": "string" },
+    { "key": "military_commissariat", "label": "Военный комиссариат", "type": "string" },
+    { "key": "military_specialty", "label": "ВУС", "type": "string" },
+    { "key": "final_result", "label": "Итоговый балл", "type": "number" }
+  ],
+  "rows": [
+    {
+      "full_name": "Иванов Иван Иванович",
+      "platoon": "1 взвод",
+      "military_commissariat": "Ярославский ОВК",
+      "military_specialty": "Оператор БПЛА",
+      "final_result": 176
+    }
+  ]
+}
+```
+
+Detail mode is intended for row-level lists and XLSX exports. The frontend still sends only catalog field ids, never SQL or physical database column names.
+
+### `POST /analytics/detail/export/xlsx`
+
+Accepts the same request body as `POST /analytics/detail` and returns XLSX.
 
 ## Rating
 
@@ -184,8 +246,9 @@ Accepts the same request body as `POST /analytics/rating` and returns XLSX.
 
 ## Query Limits
 
-- `metrics`: 0-2 items;
-- `dimensions`: 0-2 items;
+- `metrics`: 0-3 items;
+- `dimensions`: 0-3 items;
+- `detail columns`: 1-16 items;
 - `sort`: 0-3 items;
 - `limit`: 1-500.
 

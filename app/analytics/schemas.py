@@ -35,9 +35,15 @@ class AnalyticsFieldResponse(BaseModel):
     id: str
     label: str
     type: FieldType
+    displayable: bool
     groupable: bool
     filterable: bool
     aggregations: list[Aggregation] = Field(default_factory=list)
+
+
+class FieldValuesResponse(BaseModel):
+    field: str
+    values: list[Any]
 
 
 class MetricRequest(BaseModel):
@@ -57,8 +63,15 @@ class SortRequest(BaseModel):
 
 
 class AnalyticsQueryRequest(BaseModel):
-    metrics: list[MetricRequest] = Field(default_factory=list, max_length=2)
-    dimensions: list[str] = Field(default_factory=list, max_length=2)
+    metrics: list[MetricRequest] = Field(default_factory=list, max_length=3)
+    dimensions: list[str] = Field(default_factory=list, max_length=3)
+    filters: list[FilterRequest] = Field(default_factory=list)
+    sort: list[SortRequest] = Field(default_factory=list, max_length=3)
+    limit: int = Field(default=100, ge=1, le=500)
+
+
+class DetailQueryRequest(BaseModel):
+    columns: list[str] = Field(default_factory=list, min_length=1, max_length=16)
     filters: list[FilterRequest] = Field(default_factory=list)
     sort: list[SortRequest] = Field(default_factory=list, max_length=3)
     limit: int = Field(default=100, ge=1, le=500)

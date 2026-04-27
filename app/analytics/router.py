@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Query, Response
 from sqlmodel import Session
 
 from app.analytics.catalog import get_accessible_fields
@@ -42,12 +42,13 @@ def list_fields(
 @router.get("/fields/{field_id}/values", response_model=FieldValuesResponse)
 def list_field_values(
     field_id: str,
+    limit: int = Query(default=100, ge=1, le=500),
     current_user: CurrentUser = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> FieldValuesResponse:
     return FieldValuesResponse(
         field=field_id,
-        values=get_field_values(session, field_id, current_user.role),
+        values=get_field_values(session, field_id, current_user.role, limit=limit),
     )
 
 

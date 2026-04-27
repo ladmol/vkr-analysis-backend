@@ -147,7 +147,10 @@ def get_field_values(
     )
     statement = _apply_joins(statement, set(field_item.joins))
 
-    return [row["value"] for row in session.execute(statement).mappings().all()]
+    return [
+        _normalize_value(row["value"])
+        for row in session.execute(statement).mappings().all()
+    ]
 
 
 def _resolve_dimension(field_id: str, role: UserRoleName) -> AnalyticsField:
@@ -390,9 +393,13 @@ def _aggregation_label(aggregation: Aggregation) -> str:
 
 def _normalize_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
-        key: float(value) if isinstance(value, Decimal) else value
+        key: _normalize_value(value)
         for key, value in row.items()
     }
+
+
+def _normalize_value(value: Any) -> Any:
+    return float(value) if isinstance(value, Decimal) else value
 
 
 def _bad_request(detail: str) -> HTTPException:

@@ -157,7 +157,7 @@ def test_summary_endpoint_supports_multiple_metrics_and_filters(
             ],
             "dimensions": ["platoon"],
             "filters": [
-                {"field": "status", "operator": "eq", "value": "PYTEST"},
+                {"field": "status", "operator": "in", "value": ["PYTEST"]},
                 {"field": "final_result", "operator": "gte", "value": 170},
             ],
             "sort": [{"field": "student_count", "direction": "desc"}],
@@ -188,7 +188,7 @@ def test_field_values_endpoint_returns_distinct_filter_values(
     token = login(client)
 
     response = client.get(
-        "/analytics/fields/platoon/values",
+        "/analytics/fields/platoon/values?limit=10",
         headers={"Authorization": f"Bearer {token}"},
     )
 
@@ -214,7 +214,9 @@ def test_detail_query_returns_selected_person_rows(
                 "military_specialty",
                 "final_result",
             ],
-            "filters": [{"field": "platoon", "operator": "eq", "value": "Pytest взвод"}],
+            "filters": [
+                {"field": "platoon", "operator": "in", "value": ["Pytest взвод"]}
+            ],
             "sort": [{"field": "final_result", "direction": "desc"}],
             "limit": 10,
         },

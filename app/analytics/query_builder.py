@@ -31,8 +31,7 @@ def execute_analytics_query(
     request: AnalyticsQueryRequest,
     role: UserRoleName,
 ) -> AnalyticsQueryResponse:
-    if not request.metrics and not request.dimensions:
-        raise _bad_request("At least one metric or dimension is required")
+    _validate_request_shape(request)
 
     dimensions = [_resolve_dimension(field_id, role) for field_id in request.dimensions]
     metrics = [_build_metric(metric.field, metric.aggregation, role) for metric in request.metrics]
@@ -41,10 +40,14 @@ def execute_analytics_query(
     columns: list[AnalyticsColumnResponse] = []
     output_expressions: dict[str, ColumnElement[Any]] = {}
 
+    dimension_group_expressions: list[ColumnElement[Any]] = []
+
     for field_item in dimensions:
-        expression = field_item.expression().label(field_item.id)
-        select_items.append(expression)
-        output_expressions[field_item.id] = expression
+        group_expression = field_item.expression()
+        labeled_expression = group_expression.label(field_item.id)
+        dimension_group_expressions.append(group_expression)
+        select_items.append(labeled_expression)
+        output_expressions[field_item.id] = labeled_expression
         columns.append(
             AnalyticsColumnResponse(
                 key=field_item.id,
@@ -66,7 +69,7 @@ def execute_analytics_query(
     statement = _apply_filters(statement, request, role)
 
     if dimensions:
-        statement = statement.group_by(*(field_item.expression() for field_item in dimensions))
+        statement = statement.group_by(*dimension_group_expressions)
 
     statement = _apply_sort(statement, request, output_expressions)
     statement = statement.limit(request.limit)
@@ -82,6 +85,27 @@ def _resolve_dimension(field_id: str, role: UserRoleName) -> AnalyticsField:
     if not field_item.groupable:
         raise _bad_request(f"Field cannot be used as a dimension: {field_id}")
     return field_item
+
+
+def _validate_request_shape(request: AnalyticsQueryRequest) -> None:
+    if not request.metrics and not request.dimensions:
+        raise _bad_request("At least one metric or dimension is required")
+
+    if len(request.dimensions) != len(set(request.dimensions)):
+        raise _bad_request("Dimensions must be unique")
+
+    metric_keys = [
+        metric.field if metric.aggregation == Aggregation.count else (
+            f"{metric.aggregation.value}_{metric.field}"
+        )
+        for metric in request.metrics
+    ]
+    if len(metric_keys) != len(set(metric_keys)):
+        raise _bad_request("Metrics must be unique")
+
+    selected_keys = {*request.dimensions, *metric_keys}
+    if len(selected_keys) != len(request.dimensions) + len(metric_keys):
+        raise _bad_request("Selected dimensions and metrics must have unique keys")
 
 
 def _build_metric(
@@ -169,6 +193,7 @@ def _apply_filters(
             raise _bad_request(f"Unknown or inaccessible filter field: {filter_item.field}")
         if not field_item.filterable:
             raise _bad_request(f"Field cannot be filtered: {filter_item.field}")
+        _validate_filter_operator(field_item, filter_item.operator)
 
         expression = field_item.expression()
         operator = filter_item.operator
@@ -190,6 +215,17 @@ def _apply_filters(
             raise _bad_request(f"Unsupported filter operator: {operator}")
 
     return statement
+
+
+def _validate_filter_operator(
+    field_item: AnalyticsField,
+    operator: FilterOperator,
+) -> None:
+    if operator == FilterOperator.contains and field_item.type != FieldType.string:
+        raise _bad_request("Operator 'contains' is allowed only for string fields")
+
+    if operator in {FilterOperator.gte, FilterOperator.lte} and field_item.type == FieldType.string:
+        raise _bad_request("Range operators are not allowed for string fields")
 
 
 def _apply_sort(
